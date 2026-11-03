@@ -19,7 +19,7 @@ def matches(rows):
     except (ValueError, KeyError):
         return False
 
-    return scores["1"] > scores["4"] > scores["6"]
+    return scores["1"] > scores["6"] > scores["4"]
 
 def main(path):
     with open(path, encoding="utf-8-sig", newline="") as f:
