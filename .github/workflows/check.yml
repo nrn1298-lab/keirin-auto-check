@@ -1,0 +1,21 @@
+name: Keirin Check
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 22 * * *'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify Python program
+        run: python -m py_compile keirin_filter.py
+      - name: Show status
+        run: echo 'Keirin filter syntax check completed'
