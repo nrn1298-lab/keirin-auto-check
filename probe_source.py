@@ -40,3 +40,7 @@ if match:
         print("LINEUP ERROR:", e)
 else:
     print("LINEUP NOT FOUND")
+print("\n=== SCORE FIELDS ===")
+for e in entries or []:
+    fields = {k: v for k, v in e.items() if any(w in k.lower() for w in ("score", "point", "tokuten", "rate"))}
+    print(e.get("car_no"), e.get("name"), fields)
