@@ -23,3 +23,5 @@ jobs:
         run: python keirin_filter.py test_races.csv
       - name: Test real race page
         run: python probe_source.py
+      - name: Check actual race conditions
+        run: python keirin_filter.py --live https://www.keibure.com/42/20261101/1
