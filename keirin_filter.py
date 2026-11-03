@@ -30,7 +30,7 @@ def main(path):
         raise SystemExit("CSV columns missing")
 
     races = defaultdict(list)
-    for row in rows:
+     for row in rows:
         races[row["race_id"]].append(row)
 
     found = [r[0] for r in races.values() if matches(r)]
@@ -39,8 +39,7 @@ def main(path):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        raise SystemExit("Usage: python keirin_filter.py races.csv")
-    main(sys.argv[1])
+        raise SystemExit("Usage:
 
 
 # 実際の競輪サイトから取得して判定
