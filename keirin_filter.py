@@ -83,4 +83,4 @@ def check_live_race(url):
 
 if __name__ == "__main__" and len(sys.argv) == 3 and sys.argv[1] == "--live":
     url = sys.argv[2]
-    print("MATCH" if check_live_race(url) else "NOT MATCH")
+    print("MATCH" if check_live_race(url) else "NOT 
