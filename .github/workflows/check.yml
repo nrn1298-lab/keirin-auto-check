@@ -11,21 +11,25 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Verify Python program
-        run: python -m py_compile keirin_filter.py
-            - name: Scan today's races
-        run: echo 'Keirin filter syntax check completed'
+        run: python -m py_compile keirin_filter.py scan_today.py send_email.py
+
       - name: Test race filtering
         run: python keirin_filter.py test_races.csv
+
       - name: Test real race page
         run: python probe_source.py
+
       - name: Check actual race conditions
         run: python keirin_filter.py --live https://www.keibure.com/42/20261101/1
-              - name: Scan today's races
+
+      - name: Scan today's races
         id: scan
         continue-on-error: true
         run: python scan_today.py > scan_result.txt 2>&1
