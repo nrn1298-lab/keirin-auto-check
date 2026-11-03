@@ -25,7 +25,7 @@ jobs:
         run: python probe_source.py
       - name: Check actual race conditions
         run: python keirin_filter.py --live https://www.keibure.com/42/20261101/1
-- name: Scan today's races
+              - name: Scan today's races
         id: scan
         continue-on-error: true
         run: python scan_today.py > scan_result.txt 2>&1
