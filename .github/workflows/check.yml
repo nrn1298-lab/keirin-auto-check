@@ -21,3 +21,5 @@ jobs:
         run: echo 'Keirin filter syntax check completed'
       - name: Test race filtering
         run: python keirin_filter.py test_races.csv
+      - name: Test real race page
+        run: python probe_source.py
