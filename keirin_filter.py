@@ -34,10 +34,8 @@ def main(path):
         races[row["race_id"]].append(row)
 
     found = [r[0] for r in races.values() if matches(r)]
-    print(f"Checked {len(races)} races; matched {len(found)}")
-
-    for r in found:
-        print(f'{r["date"]} {r["venue"]} {r["race_no"]}R: 123/67/45')
+    if __name__ == "__main__" and len(sys.argv) == 2:
+    main(sys.argv[1])
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
