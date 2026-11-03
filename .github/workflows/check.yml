@@ -25,5 +25,17 @@ jobs:
         run: python probe_source.py
       - name: Check actual race conditions
         run: python keirin_filter.py --live https://www.keibure.com/42/20261101/1
-      - name: Scan today's races
-        run: python scan_today.py
+            - name: Scan today's races
+        id: scan
+        continue-on-error: true
+        run: python scan_today.py > scan_result.txt 2>&1
+
+      - name: Email scan results
+        if: always() && steps.scan.outcome != 'skipped'
+        env:
+          ICLOUD_APP_PASSWORD: ${{ secrets.ICLOUD_APP_PASSWORD }}
+        run: python send_email.py < scan_result.txt
+
+      - name: Fail if scan was incomplete
+        if: steps.scan.outcome == 'failure'
+        run: exit 1
