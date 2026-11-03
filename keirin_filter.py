@@ -1,6 +1,13 @@
 import csv
+import json
+import re
 import sys
 from collections import defaultdict
+from urllib.request import Request, urlopen
+
+
+TARGET_LINEUP = [["1", "2", "3"], ["6", "7"], ["4", "5"]]
+
 
 def matches(rows):
     if len(rows) != 7:
@@ -21,7 +28,8 @@ def matches(rows):
 
     return scores["1"] > scores["6"] > scores["4"]
 
-def main(path):
+
+def check_csv(path):
     with open(path, encoding="utf-8-sig", newline="") as f:
         rows = list(csv.DictReader(f))
 
@@ -30,57 +38,69 @@ def main(path):
         raise SystemExit("CSV columns missing")
 
     races = defaultdict(list)
-     for row in rows:
+    for row in rows:
         races[row["race_id"]].append(row)
 
     found = [r[0] for r in races.values() if matches(r)]
-    if __name__ == "__main__" and len(sys.argv) == 2:
-    main(sys.argv[1])
+    print(f"Checked {len(races)} races; matched {len(found)}")
 
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit("Usage:
+    for r in found:
+        print(f'{r["date"]} {r["venue"]} {r["race_no"]}R: 123/67/45')
 
 
-# 実際の競輪サイトから取得して判定
+def extract_array(html, name):
+    pattern = r"(?:window\.)?" + re.escape(name) + r"\s*=\s*(\[)"
+    match = re.search(pattern, html)
+    if not match:
+        raise ValueError(f"{name} not found")
+
+    data, _ = json.JSONDecoder().raw_decode(html[match.start(1):])
+    if not isinstance(data, list):
+        raise ValueError(f"{name} is not an array")
+    return data
+
+
 def check_live_race(url):
-    import json
-    import re
-    from urllib.request import Request, urlopen
-
     req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urlopen(req, timeout=20) as response:
         html = response.read().decode("utf-8", errors="replace")
 
-    def get_array(name):
-        pattern = r"(?:window\.)?" + re.escape(name) + r"\s*=\s*(\[)"
-        match = re.search(pattern, html)
-        if not match:
-            raise ValueError(f"{name} not found")
-        data, _ = json.JSONDecoder().raw_decode(html[match.start(1):])
-        return data
-
-    riders = get_array("__ents")
-    lineup = get_array("__comp")
+    riders = extract_array(html, "__ents")
+    lineup = extract_array(html, "__comp")
 
     if len(riders) != 7:
+        print("NOT MATCH: not a 7-rider race")
+        return False
+
+    numbers = {str(r["car_no"]) for r in riders}
+    if numbers != set("1234567"):
+        print("NOT MATCH: invalid car numbers")
         return False
 
     groups = [str(x["cars"]).split("-") for x in lineup]
     print("Actual lineup:", " / ".join("-".join(g) for g in groups))
 
-    if len(groups) != 3 or sorted(map(len, groups)) != [2, 2, 3]:
+    if groups != TARGET_LINEUP:
         return False
 
-    if groups != [["1", "2", "3"], ["6", "7"], ["4", "5"]]:
-        return False
+    scores = {str(r["car_no"]): float(r["tokuten"]) for r in riders}
+    print("Leader scores:", scores["1"], scores["6"], scores["4"])
 
-    scores = {int(r["car_no"]): float(r["tokuten"]) for r in riders}
-    print("Leader scores:", scores[1], scores[6], scores[4])
-
-    return scores[1] > scores[6] > scores[4]
+    return scores["1"] > scores["6"] > scores["4"]
 
 
-if __name__ == "__main__" and len(sys.argv) == 3 and sys.argv[1] == "--live":
-    url = sys.argv[2]
-    print("MATCH" if check_live_race(url) else "NOT 
+def main():
+    if len(sys.argv) == 2 and sys.argv[1] != "--live":
+        check_csv(sys.argv[1])
+    elif len(sys.argv) == 3 and sys.argv[1] == "--live":
+        result = check_live_race(sys.argv[2])
+        print("MATCH" if result else "NOT MATCH")
+    else:
+        raise SystemExit(
+            "Usage: python keirin_filter.py races.csv OR "
+            "python keirin_filter.py --live URL"
+        )
+
+
+if __name__ == "__main__":
+    main()
