@@ -19,3 +19,5 @@ jobs:
         run: python -m py_compile keirin_filter.py
       - name: Show status
         run: echo 'Keirin filter syntax check completed'
+      - name: Test race filtering
+        run: python keirin_filter.py test_races.csv
