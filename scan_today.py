@@ -16,17 +16,22 @@ RACE_RE = re.compile(r"^/(\d{1,3})/(20\d{6})/(\d{1,2})/?$")
 HTML_RACE_RE = re.compile(
     r"(?:https?://(?:www\.)?keibure\.com)?/\d{1,3}/20\d{6}/\d{1,2}(?:[/?#][^\s\"'<>]*)?"
 )
+MIDNIGHT_CUTOFF = 20 * 60 + 40
 
-class Links(HTMLParser):
+class PageParser(HTMLParser):
     def __init__(self):
         super().__init__()
         self.links = []
+        self.text_parts = []
 
     def handle_starttag(self, tag, attrs):
         if tag == "a":
             href = dict(attrs).get("href")
             if href:
                 self.links.append(href)
+
+    def handle_data(self, data):
+        self.text_parts.append(data)
 
 def fetch(url):
     request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -52,7 +57,7 @@ def discover():
             print(f"INDEX WARNING: {page}: {exc}")
             continue
 
-        parser = Links()
+        parser = PageParser()
         parser.feed(html)
         candidates = parser.links + HTML_RACE_RE.findall(html)
 
@@ -77,23 +82,49 @@ def discover():
         raise RuntimeError("ケイブレの当日レースURLが見つかりません")
     return races
 
+def get_deadline(html):
+    parser = PageParser()
+    parser.feed(html)
+    visible = " ".join(parser.text_parts)
+    match = re.search(r"締切\s*(\d{1,2}):(\d{2})", visible)
+    if not match:
+        return None
+    hour, minute = map(int, match.groups())
+    if hour > 23 or minute > 59:
+        return None
+    return hour * 60 + minute
+
 def main():
     print(f"Checking races for {TODAY}")
     races = discover()
     print(f"Discovered: {len(races)} race URLs")
 
     checked = 0
+    excluded = []
     missing_data = []
     errors = []
     matches = []
 
     for (venue, race_no), url in sorted(races.items()):
         try:
+            html = fetch(url)
+            deadline = get_deadline(html)
+
+            if deadline is None:
+                missing_data.append(f"{url} (締切時刻不明)")
+                continue
+
+            if deadline >= MIDNIGHT_CUTOFF:
+                hh, mm = divmod(deadline, 60)
+                excluded.append(f"{url} (締切{hh:02d}:{mm:02d})")
+                continue
+
             with redirect_stdout(io.StringIO()):
                 matched = check_live_race(url)
             checked += 1
             if matched:
                 matches.append((venue, race_no, url))
+
         except ValueError as exc:
             if "__ents not found" in str(exc):
                 missing_data.append(url)
@@ -107,22 +138,26 @@ def main():
     print(f"Discovered venues: {len(set(v for v, _ in races))}")
     print(f"Discovered URLs: {len(races)}")
     print(f"Checked: {checked}")
-    print(f"Pages without rider data: {len(missing_data)}")
+    print(f"Late races excluded (provisional): {len(excluded)}")
+    print(f"Pages without usable data: {len(missing_data)}")
     print(f"Other errors: {len(errors)}")
     print(f"Matches: {len(matches)}")
 
     for venue, race_no, url in matches:
         print(f"MATCH: Venue {venue} {race_no}R {url}")
 
+    for url in excluded:
+        print(f"EXCLUDED LATE RACE: {url}")
+
     for url in missing_data:
-        print(f"NO RIDER DATA: {url}")
+        print(f"NO USABLE DATA: {url}")
 
     for error in errors:
         print(f"FETCH ERROR: {error}")
 
     if missing_data or errors:
         raise SystemExit(
-            f"INCOMPLETE SCAN: {len(missing_data)} pages without rider data, "
+            f"INCOMPLETE SCAN: {len(missing_data)} pages without usable data, "
             f"{len(errors)} other errors"
         )
 
