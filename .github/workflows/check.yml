@@ -38,7 +38,7 @@ jobs:
         if: always() && steps.scan.outcome != 'skipped'
         env:
           ICLOUD_APP_PASSWORD: ${{ secrets.ICLOUD_APP_PASSWORD }}
-        run: python send_email.py < scan_result.txt
+                run: python send_email.py < scan_result.txt
 
       - name: Fail if scan was incomplete
         if: steps.scan.outcome == 'failure'
