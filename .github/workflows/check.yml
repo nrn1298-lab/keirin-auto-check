@@ -39,10 +39,14 @@ jobs:
         env:
           ICLOUD_APP_PASSWORD: ${{ secrets.ICLOUD_APP_PASSWORD }}
         run: |
-          sed -n '/^========== RESULTS ==========$/,$p' scan_result.txt > email_result.txt
-          if [ ! -s email_result.txt ]; then
-            echo "競輪チェックに失敗しました。GitHub Actionsの実行ログを確認してください。" > email_result.txt
-            tail -n 10 scan_result.txt >> email_result.txt
+          if grep -q '^========== RESULTS ==========$' scan_result.txt; then
+            sed -n '/^========== RESULTS ==========$/,$p' scan_result.txt > email_result.txt
+          else
+            echo "競輪チェック失敗：結果を取得できませんでした。" > email_result.txt
+          fi
+          if grep -qE 'FETCH ERROR|INDEX WARNING|Traceback|RuntimeError|INCOMPLETE SCAN' scan_result.txt; then
+            printf '\n========== ERROR DETAILS ==========\n' >> email_result.txt
+            grep -E 'FETCH ERROR|INDEX WARNING|Traceback|RuntimeError|INCOMPLETE SCAN' scan_result.txt >> email_result.txt || true
           fi
           python send_email.py < email_result.txt
 
