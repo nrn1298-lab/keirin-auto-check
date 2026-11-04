@@ -38,7 +38,13 @@ jobs:
         if: always() && steps.scan.outcome != 'skipped'
         env:
           ICLOUD_APP_PASSWORD: ${{ secrets.ICLOUD_APP_PASSWORD }}
-        run: python send_email.py < scan_result.txt
+        run: |
+          sed -n '/^========== RESULTS ==========$/,$p' scan_result.txt > email_result.txt
+          if [ ! -s email_result.txt ]; then
+            echo "競輪チェックに失敗しました。GitHub Actionsの実行ログを確認してください。" > email_result.txt
+            tail -n 10 scan_result.txt >> email_result.txt
+          fi
+          python send_email.py < email_result.txt
 
       - name: Fail if scan was incomplete
         if: steps.scan.outcome == 'failure'
