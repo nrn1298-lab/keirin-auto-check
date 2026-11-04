@@ -12,10 +12,12 @@ from keirin_filter import check_live_race
 
 BASE = "https://www.keibure.com/"
 TODAY = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y%m%d")
-RACE_PATH = re.compile(r"^/(\d{1,3})/(20\d{6})/(\d{1,2})/?$")
+RACE_RE = re.compile(r"^/(\d{1,3})/(20\d{6})/(\d{1,2})/?$")
+HTML_RACE_RE = re.compile(
+    r"(?:https?://(?:www\.)?keibure\.com)?/\d{1,3}/20\d{6}/\d{1,2}(?:[/?#][^\s\"'<>]*)?"
+)
 
-
-class LinkParser(HTMLParser):
+class Links(HTMLParser):
     def __init__(self):
         super().__init__()
         self.links = []
@@ -26,15 +28,10 @@ class LinkParser(HTMLParser):
             if href:
                 self.links.append(href)
 
-
-def get_links(url):
-    req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urlopen(req, timeout=25) as response:
-        html = response.read().decode("utf-8", errors="replace")
-    parser = LinkParser()
-    parser.feed(html)
-    return [urljoin(url, href) for href in parser.links]
-
+def fetch(url):
+    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(request, timeout=25) as response:
+        return response.read().decode("utf-8", errors="replace")
 
 def discover():
     queue = [BASE]
@@ -48,43 +45,46 @@ def discover():
         visited.add(page)
 
         try:
-            links = get_links(page)
+            html = fetch(page)
         except Exception as exc:
             if page == BASE:
                 raise RuntimeError(f"開催一覧の取得失敗: {exc}") from exc
-            print(f"INDEX WARNING: {page}: {exc}", file=sys.stderr)
+            print(f"INDEX WARNING: {page}: {exc}")
             continue
 
-        for link in links:
-            parsed = urlparse(link)
+        parser = Links()
+        parser.feed(html)
+        candidates = parser.links + HTML_RACE_RE.findall(html)
+
+        for candidate in candidates:
+            url = urljoin(page, candidate).split("#", 1)[0]
+            parsed = urlparse(url)
             if parsed.hostname not in ("keibure.com", "www.keibure.com"):
                 continue
 
-            match = RACE_PATH.fullmatch(parsed.path)
+            match = RACE_RE.fullmatch(parsed.path)
             if match and match.group(2) == TODAY:
                 venue = int(match.group(1))
                 race_no = int(match.group(3))
                 if 1 <= race_no <= 12:
-                    races[(venue, race_no)] = link.split("#")[0]
-                continue
-
-            if TODAY in link and link not in visited and link not in queue:
-                queue.append(link)
+                    races[(venue, race_no)] = (
+                        f"https://www.keibure.com/{venue}/{TODAY}/{race_no}"
+                    )
+            elif TODAY in url and url not in visited and url not in queue:
+                queue.append(url)
 
     if not races:
-        raise RuntimeError("ケイブレの当日開催リンクが見つかりません")
-
+        raise RuntimeError("ケイブレの当日レースURLが見つかりません")
     return races
-
 
 def main():
     print(f"Checking races for {TODAY}")
     races = discover()
-    venues = len({venue for venue, _ in races})
-    print(f"Discovered: {len(races)} links, {venues} venues")
+    print(f"Discovered: {len(races)} race URLs")
 
     checked = 0
-    errors = 0
+    missing_data = []
+    errors = []
     matches = []
 
     for (venue, race_no), url in sorted(races.items()):
@@ -94,24 +94,37 @@ def main():
             checked += 1
             if matched:
                 matches.append((venue, race_no, url))
+        except ValueError as exc:
+            if "__ents not found" in str(exc):
+                missing_data.append(url)
+            else:
+                errors.append(f"{url}: {exc}")
         except Exception as exc:
-            errors += 1
-            print(f"FETCH ERROR {url}: {type(exc).__name__}: {exc}")
+            errors.append(f"{url}: {type(exc).__name__}: {exc}")
 
     print("\n========== RESULTS ==========")
     print(f"Date: {TODAY}")
-    print(f"Discovered venues: {venues}")
-    print(f"Discovered races: {len(races)}")
+    print(f"Discovered venues: {len(set(v for v, _ in races))}")
+    print(f"Discovered URLs: {len(races)}")
     print(f"Checked: {checked}")
-    print(f"Errors: {errors}")
+    print(f"Pages without rider data: {len(missing_data)}")
+    print(f"Other errors: {len(errors)}")
     print(f"Matches: {len(matches)}")
 
     for venue, race_no, url in matches:
-        print(f"Venue {venue} {race_no}R {url}")
+        print(f"MATCH: Venue {venue} {race_no}R {url}")
 
-    if errors:
-        raise SystemExit(f"INCOMPLETE SCAN: {errors} race pages failed")
+    for url in missing_data:
+        print(f"NO RIDER DATA: {url}")
 
+    for error in errors:
+        print(f"FETCH ERROR: {error}")
+
+    if missing_data or errors:
+        raise SystemExit(
+            f"INCOMPLETE SCAN: {len(missing_data)} pages without rider data, "
+            f"{len(errors)} other errors"
+        )
 
 if __name__ == "__main__":
     main()
