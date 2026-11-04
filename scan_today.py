@@ -1,6 +1,7 @@
 import io
 import re
 import sys
+from collections import defaultdict
 from contextlib import redirect_stdout
 from datetime import datetime
 from html.parser import HTMLParser
@@ -16,7 +17,7 @@ RACE_RE = re.compile(r"^/(\d{1,3})/(20\d{6})/(\d{1,2})/?$")
 HTML_RACE_RE = re.compile(
     r"(?:https?://(?:www\.)?keibure\.com)?/\d{1,3}/20\d{6}/\d{1,2}(?:[/?#][^\s\"'<>]*)?"
 )
-MIDNIGHT_CUTOFF = 20 * 60 + 40
+LATE_CUTOFF = 20 * 60 + 40
 
 class PageParser(HTMLParser):
     def __init__(self):
@@ -34,8 +35,8 @@ class PageParser(HTMLParser):
         self.text_parts.append(data)
 
 def fetch(url):
-    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urlopen(request, timeout=25) as response:
+    req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(req, timeout=25) as response:
         return response.read().decode("utf-8", errors="replace")
 
 def discover():
@@ -97,34 +98,53 @@ def get_deadline(html):
 def main():
     print(f"Checking races for {TODAY}")
     races = discover()
-    print(f"Discovered: {len(races)} race URLs")
+
+    by_venue = defaultdict(list)
+    for venue, race_no in races:
+        by_venue[venue].append(race_no)
+
+    pages = {}
+    deadlines = {}
+    errors = []
+
+    for key, url in sorted(races.items()):
+        try:
+            html = fetch(url)
+            pages[key] = html
+            deadlines[key] = get_deadline(html)
+        except Exception as exc:
+            errors.append(f"{url}: {type(exc).__name__}: {exc}")
+
+    midnight_venues = set()
+
+    for venue, race_numbers in by_venue.items():
+        late_count = sum(
+            1 for race_no in race_numbers
+            if deadlines.get((venue, race_no)) is not None
+            and deadlines[(venue, race_no)] >= LATE_CUTOFF
+        )
+        if max(race_numbers) <= 7 and late_count >= 2:
+            midnight_venues.add(venue)
 
     checked = 0
     excluded = []
     missing_data = []
-    errors = []
     matches = []
 
     for (venue, race_no), url in sorted(races.items()):
+        if venue in midnight_venues:
+            excluded.append(url)
+            continue
+
+        if (venue, race_no) not in pages:
+            continue
+
         try:
-            html = fetch(url)
-            deadline = get_deadline(html)
-
-            if deadline is None:
-                missing_data.append(f"{url} (締切時刻不明)")
-                continue
-
-            if deadline >= MIDNIGHT_CUTOFF:
-                hh, mm = divmod(deadline, 60)
-                excluded.append(f"{url} (締切{hh:02d}:{mm:02d})")
-                continue
-
             with redirect_stdout(io.StringIO()):
                 matched = check_live_race(url)
             checked += 1
             if matched:
                 matches.append((venue, race_no, url))
-
         except ValueError as exc:
             if "__ents not found" in str(exc):
                 missing_data.append(url)
@@ -135,29 +155,27 @@ def main():
 
     print("\n========== RESULTS ==========")
     print(f"Date: {TODAY}")
-    print(f"Discovered venues: {len(set(v for v, _ in races))}")
+    print(f"Discovered venues: {len(by_venue)}")
     print(f"Discovered URLs: {len(races)}")
+    print(f"Midnight venue candidates: {sorted(midnight_venues)}")
+    print(f"Midnight races excluded: {len(excluded)}")
     print(f"Checked: {checked}")
-    print(f"Late races excluded (provisional): {len(excluded)}")
-    print(f"Pages without usable data: {len(missing_data)}")
+    print(f"Pages without rider data: {len(missing_data)}")
     print(f"Other errors: {len(errors)}")
     print(f"Matches: {len(matches)}")
 
     for venue, race_no, url in matches:
         print(f"MATCH: Venue {venue} {race_no}R {url}")
 
-    for url in excluded:
-        print(f"EXCLUDED LATE RACE: {url}")
-
     for url in missing_data:
-        print(f"NO USABLE DATA: {url}")
+        print(f"NO RIDER DATA: {url}")
 
     for error in errors:
         print(f"FETCH ERROR: {error}")
 
     if missing_data or errors:
         raise SystemExit(
-            f"INCOMPLETE SCAN: {len(missing_data)} pages without usable data, "
+            f"INCOMPLETE SCAN: {len(missing_data)} pages without rider data, "
             f"{len(errors)} other errors"
         )
 
